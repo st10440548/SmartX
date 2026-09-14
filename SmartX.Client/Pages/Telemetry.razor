@@ -1,0 +1,427 @@
+@page "/telemetry"
+
+@using SmartX.Client.Services
+
+@implements IDisposable
+
+@inject SmartXApiService Api
+
+<PageTitle>Telemetry History</PageTitle>
+
+<div class="telemetry-page">
+
+    <div class="page-header">
+
+        <div>
+
+            <p class="eyebrow">SMART-X IoT MESH ECOSYSTEM</p>
+
+            <h1>Telemetry History</h1>
+
+            <p class="subtitle">
+                Interactive historical drill-down for individual IoT devices.
+            </p>
+
+        </div>
+
+        <div class="connection-status">
+
+            <span class="status-dot"></span>
+
+            LIVE
+
+        </div>
+
+    </div>
+
+    @if (_loadingSensors)
+    {
+        <div class="loading">
+            Loading devices...
+        </div>
+    }
+    else
+    {
+        <section class="panel telemetry-selector">
+
+            <div class="panel-header">
+
+                <div>
+
+                    <p class="panel-kicker">DEVICE SELECTION</p>
+
+                    <h2>Select Sensor</h2>
+
+                </div>
+
+                <span class="panel-count">
+                    @_sensors.Count devices
+                </span>
+
+            </div>
+
+            <select class="sensor-select"
+                    value="@_selectedDeviceId"
+                    @onchange="OnDeviceChanged">
+
+                <option value="">
+                    Select a device...
+                </option>
+
+                @foreach (var sensor in _sensors)
+                {
+                    <option value="@sensor.DeviceId">
+                        @sensor.DeviceId — @sensor.Name
+                    </option>
+                }
+
+            </select>
+
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(_selectedDeviceId))
+        {
+            <div class="telemetry-stats">
+
+                <div class="stat-card">
+
+                    <span class="stat-label">READINGS</span>
+
+                    <strong>@_readings.Count</strong>
+
+                    <span class="stat-detail">
+                        Historical samples
+                    </span>
+
+                </div>
+
+                <div class="stat-card">
+
+                    <span class="stat-label">ANOMALIES</span>
+
+                    <strong class="anomaly-value">
+                        @AnomalyCount
+                    </strong>
+
+                    <span class="stat-detail">
+                        Detected events
+                    </span>
+
+                </div>
+
+                <div class="stat-card">
+
+                    <span class="stat-label">CATEGORY</span>
+
+                    <strong class="category-value">
+                        @SelectedCategory
+                    </strong>
+
+                    <span class="stat-detail">
+                        Sensor type
+                    </span>
+
+                </div>
+
+                <div class="stat-card">
+
+                    <span class="stat-label">STATUS</span>
+
+                    <strong class="@(_selectedSensor?.IsOnline == true ? "online-value" : "offline-value")">
+                        @(_selectedSensor?.IsOnline == true ? "ONLINE" : "OFFLINE")
+                    </strong>
+
+                    <span class="stat-detail">
+                        Device connection
+                    </span>
+
+                </div>
+
+            </div>
+
+            <section class="panel">
+
+                <div class="panel-header">
+
+                    <div>
+
+                        <p class="panel-kicker">HISTORICAL STREAM</p>
+
+                        <h2>@_selectedDeviceId</h2>
+
+                    </div>
+
+                    <span class="panel-count">
+                        Auto-refresh: 2s
+                    </span>
+
+                </div>
+
+                @if (_loadingReadings)
+                {
+                    <div class="loading">
+                        Loading telemetry...
+                    </div>
+                }
+                else if (_readings.Count == 0)
+                {
+                    <div class="empty-state">
+                        No telemetry available for this device.
+                    </div>
+                }
+                else
+                {
+                    <div class="history-table">
+
+                        <div class="history-row history-heading">
+
+                            <span>TIME</span>
+
+                            <span>CATEGORY</span>
+
+                            <span>VALUE</span>
+
+                            <span>STATUS</span>
+
+                        </div>
+
+                        @foreach (var reading in _readings.Take(100))
+                        {
+                            <div class="history-row @(reading.IsAnomaly ? "history-anomaly" : "")">
+
+                                <span>
+                                    @reading.Timestamp
+                                        .ToLocalTime()
+                                        .ToString("dd MMM HH:mm:ss")
+                                </span>
+
+                                <span>
+                                    @GetCategoryName(reading.Category)
+                                </span>
+
+                                <span class="history-value">
+                                    @GetDisplayValue(reading)
+                                </span>
+
+                                <span>
+
+                                    @if (reading.IsAnomaly)
+                                    {
+                                        <span class="@GetSeverityClass(reading.Severity)">
+                                            @GetSeverityName(reading.Severity)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="normal-label">
+                                            NORMAL
+                                        </span>
+                                    }
+
+                                </span>
+
+                            </div>
+                        }
+
+                    </div>
+                }
+
+            </section>
+        }
+        else
+        {
+            <section class="panel empty-panel">
+
+                <div class="empty-state">
+
+                    Select a sensor above to inspect its historical telemetry.
+
+                </div>
+
+            </section>
+        }
+    }
+
+</div>
+
+@code {
+
+    private List<SensorDto> _sensors = new();
+
+    private List<TelemetryReadingDto> _readings = new();
+
+    private SensorDto? _selectedSensor;
+
+    private string _selectedDeviceId = string.Empty;
+
+    private bool _loadingSensors = true;
+
+    private bool _loadingReadings;
+
+    private PeriodicTimer? _timer;
+
+    private CancellationTokenSource? _refreshCancellation;
+
+    private int AnomalyCount =>
+        _readings.Count(x => x.IsAnomaly);
+
+    private string SelectedCategory =>
+        _selectedSensor is null
+            ? "-"
+            : GetCategoryName(_selectedSensor.Category);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _refreshCancellation =
+            new CancellationTokenSource();
+
+        await LoadSensors();
+
+        _timer =
+            new PeriodicTimer(
+                TimeSpan.FromSeconds(2));
+
+        _ = RefreshLoop(
+            _refreshCancellation.Token);
+    }
+
+    private async Task LoadSensors()
+    {
+        try
+        {
+            _sensors =
+                await Api.GetSensorsAsync();
+
+            _loadingSensors = false;
+        }
+        catch
+        {
+            _loadingSensors = false;
+        }
+    }
+
+    private async Task OnDeviceChanged(
+        ChangeEventArgs args)
+    {
+        _selectedDeviceId =
+            args.Value?.ToString() ?? string.Empty;
+
+        _selectedSensor =
+            _sensors.FirstOrDefault(
+                x => x.DeviceId == _selectedDeviceId);
+
+        await LoadSelectedTelemetry();
+    }
+
+    private async Task LoadSelectedTelemetry()
+    {
+        if (string.IsNullOrWhiteSpace(
+            _selectedDeviceId))
+        {
+            _readings.Clear();
+            return;
+        }
+
+        _loadingReadings = true;
+
+        try
+        {
+            _readings =
+                await Api.GetDeviceTelemetryAsync(
+                    _selectedDeviceId);
+        }
+        finally
+        {
+            _loadingReadings = false;
+        }
+
+        await InvokeAsync(
+            StateHasChanged);
+    }
+
+    private async Task RefreshLoop(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (_timer is not null &&
+                   await _timer.WaitForNextTickAsync(
+                       cancellationToken))
+            {
+                await LoadSensors();
+
+                if (!string.IsNullOrWhiteSpace(
+                    _selectedDeviceId))
+                {
+                    _selectedSensor =
+                        _sensors.FirstOrDefault(
+                            x => x.DeviceId ==
+                                 _selectedDeviceId);
+
+                    await LoadSelectedTelemetry();
+                }
+
+                await InvokeAsync(
+                    StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private static string GetCategoryName(
+        int category)
+    {
+        return category switch
+        {
+            0 => "Environmental",
+            1 => "Power",
+            2 => "Actuator",
+            _ => "Other"
+        };
+    }
+
+    private static string GetDisplayValue(
+        TelemetryReadingDto reading)
+    {
+        if (reading.Value is null)
+        {
+            return "-";
+        }
+
+        return $"{reading.Value} {reading.Unit}";
+    }
+
+    private static string GetSeverityName(
+        int severity)
+    {
+        return severity switch
+        {
+            2 => "CRITICAL",
+            1 => "WARNING",
+            _ => "NONE"
+        };
+    }
+
+    private static string GetSeverityClass(
+        int severity)
+    {
+        return severity switch
+        {
+            2 => "severity-critical",
+            1 => "severity-warning",
+            _ => "normal-label"
+        };
+    }
+
+    public void Dispose()
+    {
+        _refreshCancellation?.Cancel();
+
+        _timer?.Dispose();
+
+        _refreshCancellation?.Dispose();
+    }
+
+}

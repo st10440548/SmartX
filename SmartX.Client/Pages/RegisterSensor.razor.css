@@ -1,0 +1,137 @@
+.registration-panel {
+    max-width: 1000px;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    padding: 10px 0 20px;
+}
+
+.form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.form-field label {
+    color: #7d899b;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.form-field input,
+.form-field select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 11px;
+    border: 1px solid #293241;
+    border-radius: 5px;
+    outline: none;
+    background: #0d131c;
+    color: #d8dee7;
+    font-family: inherit;
+    font-size: 12px;
+}
+
+.form-field input::placeholder {
+    color: #465365;
+}
+
+.form-field input:focus,
+.form-field select:focus {
+    border-color: #52657c;
+    background: #101822;
+}
+
+.form-field select {
+    cursor: pointer;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding-top: 20px;
+    border-top: 1px solid #181f2a;
+}
+
+.primary-button,
+.secondary-button {
+    padding: 10px 15px;
+    border-radius: 5px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+}
+
+.primary-button {
+    border: 1px solid #304052;
+    background: #182231;
+    color: #dce3ec;
+}
+
+.primary-button:hover {
+    border-color: #52657c;
+    background: #202c3c;
+}
+
+.primary-button:disabled {
+    opacity: 0.5;
+    cursor: wait;
+}
+
+.secondary-button {
+    border: 1px solid #293241;
+    background: transparent;
+    color: #7d899b;
+}
+
+.secondary-button:hover {
+    background: #111722;
+    color: #b9c3d0;
+}
+
+.form-error {
+    margin-top: 5px;
+    padding: 10px 12px;
+    border: 1px solid #422a2a;
+    border-radius: 5px;
+    background: #170f0f;
+    color: #df8585;
+    font-size: 11px;
+}
+
+.form-success {
+    margin-top: 5px;
+    padding: 10px 12px;
+    border: 1px solid #263e30;
+    border-radius: 5px;
+    background: #0d1712;
+    color: #70dc99;
+    font-size: 11px;
+}
+
+.validation-message {
+    color: #df8585;
+    font-size: 10px;
+}
+
+@media (max-width: 700px) {
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .form-actions {
+        justify-content: stretch;
+    }
+
+    .primary-button,
+    .secondary-button {
+        flex: 1;
+    }
+}

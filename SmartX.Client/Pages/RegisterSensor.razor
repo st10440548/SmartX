@@ -1,0 +1,175 @@
+@page "/sensors/register"
+@using SmartX.Client.Services
+@inject SmartXApiService Api
+@inject NavigationManager Navigation
+
+<PageTitle>Register Sensor</PageTitle>
+
+<div class="dashboard">
+    <div class="dashboard-header">
+        <div>
+            <p class="eyebrow">SMART-X DEVICE MANAGEMENT</p>
+            <h1>Register Sensor</h1>
+            <p class="subtitle">
+                Add a new device to the Smart-X IoT mesh.
+            </p>
+        </div>
+    </div>
+
+    <section class="panel registration-panel">
+        <div class="panel-header">
+            <div>
+                <p class="panel-kicker">DEVICE CONFIGURATION</p>
+                <h2>Sensor Information</h2>
+            </div>
+        </div>
+
+        <EditForm Model="_sensor" OnValidSubmit="SubmitRegistration">
+            <DataAnnotationsValidator />
+
+            <div class="form-grid">
+                <div class="form-field">
+                    <label>Device ID</label>
+                    <InputText @bind-Value="_sensor.DeviceId"
+                               placeholder="ESP32-0101" />
+                    <ValidationMessage For="@(() => _sensor.DeviceId)" />
+                </div>
+
+                <div class="form-field">
+                    <label>MAC Address</label>
+                    <InputText @bind-Value="_sensor.MacAddress"
+                               placeholder="AA:BB:CC:DD:EE:FF" />
+                </div>
+
+                <div class="form-field">
+                    <label>Sensor Name</label>
+                    <InputText @bind-Value="_sensor.Name"
+                               placeholder="Hydroponic Temperature Sensor" />
+                </div>
+
+                <div class="form-field">
+                    <label>Deployment Location</label>
+                    <InputText @bind-Value="_sensor.DeploymentLocation"
+                               placeholder="Facility 1" />
+                </div>
+
+                <div class="form-field">
+                    <label>Zone</label>
+                    <InputText @bind-Value="_sensor.Zone"
+                               placeholder="Zone 1" />
+                </div>
+
+                <div class="form-field">
+                    <label>Node ID</label>
+                    <InputText @bind-Value="_sensor.NodeId"
+                               placeholder="NODE-021" />
+                </div>
+
+                <div class="form-field">
+                    <label>Category</label>
+                    <InputSelect @bind-Value="_sensor.Category">
+                        <option value="0">Environmental</option>
+                        <option value="1">Power Consumption</option>
+                        <option value="2">Actuator</option>
+                        <option value="3">Security</option>
+                        <option value="4">Network</option>
+                        <option value="5">Other</option>
+                    </InputSelect>
+                </div>
+
+                <div class="form-field">
+                    <label>Data Type</label>
+                    <InputText @bind-Value="_sensor.DataType"
+                               placeholder="Float" />
+                </div>
+
+                <div class="form-field">
+                    <label>Unit</label>
+                    <InputText @bind-Value="_sensor.Unit"
+                               placeholder="°C" />
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="form-error">
+                    @_error
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(_success))
+            {
+                <div class="form-success">
+                    @_success
+                </div>
+            }
+
+            <div class="form-actions">
+                <button type="button"
+                        class="secondary-button"
+                        @onclick="Cancel">
+                    Cancel
+                </button>
+
+                <button type="submit"
+                        class="primary-button"
+                        disabled="@_saving">
+                    @(_saving ? "REGISTERING..." : "REGISTER SENSOR")
+                </button>
+            </div>
+        </EditForm>
+    </section>
+</div>
+
+@code {
+    private CreateSensorDto _sensor = new()
+    {
+        Category = 0,
+        DataType = "Float",
+        Unit = "°C"
+    };
+
+    private bool _saving;
+    private string _error = string.Empty;
+    private string _success = string.Empty;
+
+    private async Task SubmitRegistration()
+    {
+        _saving = true;
+        _error = string.Empty;
+        _success = string.Empty;
+
+        try
+        {
+            var result = await Api.RegisterSensorAsync(_sensor);
+
+            if (result is null)
+            {
+                _error =
+                    "Registration failed. The device ID may already exist.";
+                return;
+            }
+
+            _success =
+                $"Sensor {result.DeviceId} registered successfully.";
+
+            await Task.Delay(800);
+
+            Navigation.NavigateTo(
+                $"/sensors/{result.DeviceId}");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/sensors");
+    }
+}

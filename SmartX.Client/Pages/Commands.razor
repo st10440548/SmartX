@@ -1,0 +1,331 @@
+@page "/commands"
+
+@using SmartX.Client.Services
+
+@implements IDisposable
+
+@inject SmartXApiService Api
+
+<PageTitle>Command Centre</PageTitle>
+
+<div class="dashboard">
+
+    <div class="dashboard-header">
+        <div>
+            <p class="eyebrow">DEVICE CONTROL</p>
+            <h1>Command Centre</h1>
+            <p class="subtitle">
+                Send operational commands to registered IoT devices.
+            </p>
+        </div>
+
+        <div class="connection-status">
+            <span class="status-dot"></span>
+            COMMAND API ONLINE
+        </div>
+    </div>
+
+    <div class="dashboard-grid">
+
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <p class="panel-kicker">COMMAND DISPATCH</p>
+                    <h2>Send Command</h2>
+                </div>
+            </div>
+
+            <div class="command-form">
+
+                <div class="form-group">
+                    <label>DEVICE</label>
+
+                    <select @bind="_selectedDeviceId">
+                        <option value="">Select a device...</option>
+
+                        @foreach (var sensor in _sensors)
+                        {
+                            <option value="@sensor.DeviceId">
+                                @sensor.DeviceId — @sensor.Name
+                            </option>
+                        }
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>COMMAND</label>
+
+                    <select @bind="_selectedCommand">
+                        <option value="">Select command...</option>
+                        <option value="Restart">Restart Device</option>
+                        <option value="OpenValve">Open Valve</option>
+                        <option value="CloseValve">Close Valve</option>
+                        <option value="SetThreshold">Set Threshold</option>
+                        <option value="SetSamplingRate">
+                            Set Sampling Rate
+                        </option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>PAYLOAD</label>
+
+                    <input
+                        type="text"
+                        @bind="_payload"
+                        placeholder="Optional command payload..." />
+                </div>
+
+                <button
+                    class="primary-button command-button"
+                    @onclick="SendCommand"
+                    disabled="@_sending">
+                    @(_sending ? "SENDING..." : "SEND COMMAND")
+                </button>
+
+                @if (!string.IsNullOrWhiteSpace(_message))
+                {
+                    <div class="command-message">
+                        @_message
+                    </div>
+                }
+
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <p class="panel-kicker">COMMAND STATUS</p>
+                    <h2>Latest Activity</h2>
+                </div>
+            </div>
+
+            @if (_commands.Count == 0)
+            {
+                <div class="empty-state">
+                    No commands have been dispatched.
+                </div>
+            }
+            else
+            {
+                var latest = _commands.First();
+
+                <div class="command-latest">
+
+                    <span class="command-status">
+                        @latest.Status
+                    </span>
+
+                    <strong>
+                        @latest.CommandType
+                    </strong>
+
+                    <span>
+                        @latest.DeviceId
+                    </span>
+
+                    <small>
+                        @latest.CreatedAt
+                            .ToLocalTime()
+                            .ToString("yyyy-MM-dd HH:mm:ss")
+                    </small>
+
+                </div>
+            }
+        </section>
+
+    </div>
+
+    <section class="panel">
+
+        <div class="panel-header">
+            <div>
+                <p class="panel-kicker">COMMAND HISTORY</p>
+                <h2>Recent Commands</h2>
+            </div>
+
+            <span class="panel-count">
+                @_commands.Count commands
+            </span>
+        </div>
+
+        @if (_commands.Count == 0)
+        {
+            <div class="empty-state">
+                No command history available.
+            </div>
+        }
+        else
+        {
+            <div class="command-table">
+
+                <div class="command-table-row command-heading">
+                    <span>TIME</span>
+                    <span>DEVICE</span>
+                    <span>COMMAND</span>
+                    <span>PAYLOAD</span>
+                    <span>STATUS</span>
+                </div>
+
+                @foreach (var command in _commands)
+                {
+                    <div class="command-table-row">
+
+                        <span>
+                            @command.CreatedAt
+                                .ToLocalTime()
+                                .ToString("HH:mm:ss")
+                        </span>
+
+                        <span>
+                            @command.DeviceId
+                        </span>
+
+                        <span class="command-name">
+                            @command.CommandType
+                        </span>
+
+                        <span>
+                            @(string.IsNullOrWhiteSpace(command.Payload)
+                                ? "—"
+                                : command.Payload)
+                        </span>
+
+                        <span class="command-executed">
+                            @command.Status
+                        </span>
+
+                    </div>
+                }
+
+            </div>
+        }
+
+    </section>
+
+</div>
+
+@code {
+
+    private List<SensorDto> _sensors = new();
+    private List<DeviceCommandDto> _commands = new();
+
+    private string _selectedDeviceId = string.Empty;
+    private string _selectedCommand = string.Empty;
+    private string _payload = string.Empty;
+
+    private bool _sending;
+    private string _message = string.Empty;
+
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _refreshCancellation;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _refreshCancellation =
+            new CancellationTokenSource();
+
+        await LoadData();
+
+        _timer =
+            new PeriodicTimer(
+                TimeSpan.FromSeconds(2));
+
+        _ = RefreshLoop(
+            _refreshCancellation.Token);
+    }
+
+    private async Task LoadData()
+    {
+        _sensors =
+            await Api.GetSensorsAsync();
+
+        _commands =
+            await Api.GetCommandsAsync();
+    }
+
+    private async Task RefreshLoop(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (
+                _timer is not null &&
+                await _timer.WaitForNextTickAsync(
+                    cancellationToken))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadData();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task SendCommand()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedDeviceId))
+        {
+            _message = "Select a device first.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_selectedCommand))
+        {
+            _message = "Select a command first.";
+            return;
+        }
+
+        _sending = true;
+        _message = string.Empty;
+
+        try
+        {
+            var command =
+                await Api.SendCommandAsync(
+                    new CreateCommandDto
+                    {
+                        DeviceId = _selectedDeviceId,
+                        CommandType = _selectedCommand,
+                        Payload = _payload
+                    });
+
+            if (command is null)
+            {
+                _message =
+                    "Command failed. Please try again.";
+                return;
+            }
+
+            _commands =
+                await Api.GetCommandsAsync();
+
+            _payload = string.Empty;
+
+            _message =
+                "Command executed successfully.";
+        }
+        catch (Exception ex)
+        {
+            _message =
+                $"Command failed: {ex.Message}";
+        }
+        finally
+        {
+            _sending = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public void Dispose()
+    {
+        _refreshCancellation?.Cancel();
+        _timer?.Dispose();
+        _refreshCancellation?.Dispose();
+    }
+}

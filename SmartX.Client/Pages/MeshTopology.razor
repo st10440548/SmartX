@@ -1,0 +1,326 @@
+@page "/mesh"
+
+@using SmartX.Client.Services
+@inject SmartX.Client.Services.SmartXApiService Api
+@implements IDisposable
+
+<PageTitle>Mesh Topology | Smart-X</PageTitle>
+
+<div class="mesh-page">
+
+    <div class="page-header">
+        <div>
+            <h1>Network Topology</h1>
+            <p>Live view of the Smart-X IoT mesh network.</p>
+        </div>
+
+        <button class="refresh-button" @onclick="LoadMeshAsync">
+            Refresh
+        </button>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="loading-panel">
+            Loading mesh topology...
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="error-panel">
+            @_error
+        </div>
+    }
+    else
+    {
+        <div class="mesh-stats">
+
+            <div class="mesh-stat-card">
+                <span class="mesh-stat-label">TOTAL NODES</span>
+                <strong>@_nodes.Count</strong>
+            </div>
+
+            <div class="mesh-stat-card">
+                <span class="mesh-stat-label">HEALTHY</span>
+                <strong>@_healthyNodes</strong>
+            </div>
+
+            <div class="mesh-stat-card">
+                <span class="mesh-stat-label">DEGRADED</span>
+                <strong>@_degradedNodes</strong>
+            </div>
+
+            <div class="mesh-stat-card">
+                <span class="mesh-stat-label">GATEWAY</span>
+                <strong>ONLINE</strong>
+            </div>
+
+        </div>
+
+        <div class="mesh-layout">
+
+            <section class="mesh-panel">
+
+                <div class="mesh-panel-header">
+                    <div>
+                        <h2>Mesh Structure</h2>
+                        <p>Gateway → routers → sensor nodes</p>
+                    </div>
+                </div>
+
+                @foreach (var router in Routers)
+                {
+                    <details class="mesh-router" open>
+
+                        <summary>
+                            <div class="mesh-node-summary">
+
+                                <span class="node-indicator router-indicator"></span>
+
+                                <div class="node-summary-main">
+                                    <strong>@router.Name</strong>
+                                    <span>@router.NodeId</span>
+                                </div>
+
+                                <span class="node-meta">
+                                    @router.ChildNodeIds.Count nodes
+                                </span>
+
+                            </div>
+                        </summary>
+
+                        <div class="mesh-children">
+
+                            @foreach (var sensor in GetChildren(router.NodeId))
+                            {
+                                <button
+                                    class="mesh-sensor"
+                                    @onclick="() => SelectNode(sensor)">
+
+                                    <span class="node-indicator @(sensor.RouteStatus == "Healthy" ? "healthy-indicator" : "degraded-indicator")"></span>
+
+                                    <span class="sensor-main">
+                                        <strong>@sensor.DeviceId</strong>
+                                        <small>@sensor.Name</small>
+                                    </span>
+
+                                    <span class="sensor-signal">
+                                        @sensor.SignalStrength%
+                                    </span>
+
+                                    <span class="sensor-status">
+                                        @sensor.RouteStatus
+                                    </span>
+
+                                </button>
+                            }
+
+                        </div>
+
+                    </details>
+                }
+
+            </section>
+
+            <section class="mesh-panel inspector-panel">
+
+                <div class="mesh-panel-header">
+                    <div>
+                        <h2>Node Inspector</h2>
+                        <p>Select a sensor to inspect its route.</p>
+                    </div>
+                </div>
+
+                @if (_selectedNode is null)
+                {
+                    <div class="empty-inspector">
+                        <div class="empty-icon">⌁</div>
+                        <strong>No node selected</strong>
+                        <span>Select a sensor from the topology.</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="node-inspector">
+
+                        <div class="inspector-title">
+                            <span class="node-indicator @(IsHealthy(_selectedNode) ? "healthy-indicator" : "degraded-indicator")"></span>
+
+                            <div>
+                                <h3>@_selectedNode.DeviceId</h3>
+                                <span>@_selectedNode.Name</span>
+                            </div>
+                        </div>
+
+                        <div class="inspector-grid">
+
+                            <div>
+                                <span>Node ID</span>
+                                <strong>@_selectedNode.NodeId</strong>
+                            </div>
+
+                            <div>
+                                <span>Signal</span>
+                                <strong>@_selectedNode.SignalStrength%</strong>
+                            </div>
+
+                            <div>
+                                <span>Hop Count</span>
+                                <strong>@_selectedNode.HopCount</strong>
+                            </div>
+
+                            <div>
+                                <span>Route</span>
+                                <strong>@_selectedNode.RouteStatus</strong>
+                            </div>
+
+                        </div>
+
+                        <div class="route-section">
+
+                            <h3>Route to Gateway</h3>
+
+                            @if (_route.Count == 0)
+                            {
+                                <span class="route-empty">
+                                    Route unavailable.
+                                </span>
+                            }
+                            else
+                            {
+                                <div class="route-path">
+
+                                    @for (var i = 0; i < _route.Count; i++)
+                                    {
+                                        var routeNode = _route[i];
+
+                                        <div class="route-node">
+                                            <span class="route-dot"></span>
+
+                                            <div>
+                                                <strong>@routeNode.Name</strong>
+                                                <small>@routeNode.NodeId</small>
+                                            </div>
+                                        </div>
+
+                                        @if (i < _route.Count - 1)
+                                        {
+                                            <div class="route-line"></div>
+                                        }
+                                    }
+
+                                </div>
+                            }
+
+                        </div>
+
+                    </div>
+                }
+
+            </section>
+
+        </div>
+    }
+
+</div>
+
+@code {
+
+    private List<MeshNodeDto> _nodes = new();
+    private MeshNodeDto? _selectedNode;
+    private List<MeshNodeDto> _route = new();
+
+    private int _healthyNodes;
+    private int _degradedNodes;
+
+    private bool _loading = true;
+    private string _error = string.Empty;
+
+    private System.Threading.Timer? _refreshTimer;
+
+    private IEnumerable<MeshNodeDto> Routers =>
+        _nodes.Where(x => x.NodeType == "Router");
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMeshAsync();
+
+        _refreshTimer = new System.Threading.Timer(
+            async _ =>
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadMeshAsync();
+                    StateHasChanged();
+                });
+            },
+            null,
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(5));
+    }
+
+    private async Task LoadMeshAsync()
+    {
+        try
+        {
+            _error = string.Empty;
+
+            var nodes = await Api.GetMeshNodesAsync();
+            var health = await Api.GetMeshHealthAsync();
+
+            _nodes = nodes;
+            _healthyNodes = health?.HealthyNodes ?? 0;
+            _degradedNodes = health?.DegradedNodes ?? 0;
+
+            if (_selectedNode is not null)
+            {
+                var refreshed = _nodes.FirstOrDefault(x =>
+                    x.NodeId.Equals(
+                        _selectedNode.NodeId,
+                        StringComparison.OrdinalIgnoreCase));
+
+                if (refreshed is not null)
+                {
+                    _selectedNode = refreshed;
+                    _route = await Api.GetMeshRouteAsync(
+                        refreshed.NodeId);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unable to load mesh topology: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private IEnumerable<MeshNodeDto> GetChildren(string nodeId)
+    {
+        return _nodes.Where(x =>
+            x.ParentNodeId.Equals(
+                nodeId,
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task SelectNode(MeshNodeDto node)
+    {
+        _selectedNode = node;
+        _route = await Api.GetMeshRouteAsync(node.NodeId);
+    }
+
+    private static bool IsHealthy(MeshNodeDto node)
+    {
+        return node.IsOnline &&
+               node.RouteStatus.Equals(
+                   "Healthy",
+                   StringComparison.OrdinalIgnoreCase);
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+}

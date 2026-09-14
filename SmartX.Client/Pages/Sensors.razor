@@ -1,0 +1,232 @@
+@page "/sensors"
+@using SmartX.Client.Services
+@implements IDisposable
+@inject SmartXApiService Api
+
+<PageTitle>Smart-X Sensors</PageTitle>
+
+<div class="dashboard">
+    <div class="dashboard-header">
+        <div>
+            <p class="eyebrow">SMART-X DEVICE MANAGEMENT</p>
+            <h1>Sensor Registry</h1>
+            <p class="subtitle">
+                Registered ESP32 devices across the Smart-X IoT mesh.
+            </p>
+        </div>
+
+        <div class="sensor-header-actions">
+            <div class="sensor-summary">
+                <strong>@_sensors.Count</strong>
+                <span>REGISTERED</span>
+            </div>
+
+            <a class="register-button" href="/sensors/register">
+                + REGISTER SENSOR
+            </a>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="loading">
+            Loading sensor registry...
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="error-panel">
+            <strong>Connection error</strong>
+            <p>@_error</p>
+        </div>
+    }
+    else
+    {
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span class="stat-label">TOTAL DEVICES</span>
+                <strong>@_sensors.Count</strong>
+                <span class="stat-detail">Registered sensors</span>
+            </div>
+
+            <div class="stat-card">
+                <span class="stat-label">ONLINE</span>
+                <strong class="online-value">@OnlineCount</strong>
+                <span class="stat-detail">Currently connected</span>
+            </div>
+
+            <div class="stat-card">
+                <span class="stat-label">OFFLINE</span>
+                <strong class="offline-value">@OfflineCount</strong>
+                <span class="stat-detail">Currently disconnected</span>
+            </div>
+
+            <div class="stat-card">
+                <span class="stat-label">CATEGORIES</span>
+                <strong>@CategoryCount</strong>
+                <span class="stat-detail">Sensor types</span>
+            </div>
+        </div>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <p class="panel-kicker">DEVICE REGISTRY</p>
+                    <h2>Registered Sensors</h2>
+                </div>
+
+                <span class="panel-count">
+                    Auto-refreshing
+                </span>
+            </div>
+
+            <div class="sensor-table">
+                <div class="sensor-row sensor-heading">
+                    <span>DEVICE</span>
+                    <span>CATEGORY</span>
+                    <span>LOCATION</span>
+                    <span>TYPE</span>
+                    <span>STATUS</span>
+                    <span>LAST SEEN</span>
+                </div>
+
+                @foreach (var sensor in _sensors)
+                {
+                    <div class="sensor-row">
+                        <div class="device-cell">
+                            <a class="device-link" href="/sensors/@sensor.DeviceId">@sensor.DeviceId</a>
+                            <span>@sensor.Name</span>
+                        </div>
+
+                        <span>
+                            <span class="category-badge">
+                                @GetCategoryName(sensor.Category)
+                            </span>
+                        </span>
+
+                        <div class="location-cell">
+                            <strong>@sensor.DeploymentLocation</strong>
+                            <span>@sensor.Zone</span>
+                        </div>
+
+                        <div class="type-cell">
+                            <strong>@sensor.DataType</strong>
+                            <span>@sensor.Unit</span>
+                        </div>
+
+                        <span>
+                            @if (sensor.IsOnline)
+                            {
+                                <span class="status-badge online">
+                                    <span class="status-dot-small"></span>
+                                    ONLINE
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="status-badge offline">
+                                    <span class="status-dot-small"></span>
+                                    OFFLINE
+                                </span>
+                            }
+                        </span>
+
+                        <span class="last-seen">
+                            @sensor.LastSeen.ToLocalTime().ToString("HH:mm:ss")
+                        </span>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private List<SensorDto> _sensors = new();
+
+    private bool _loading = true;
+    private string _error = string.Empty;
+
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _refreshCancellation;
+
+    private int OnlineCount =>
+        _sensors.Count(x => x.IsOnline);
+
+    private int OfflineCount =>
+        _sensors.Count(x => !x.IsOnline);
+
+    private int CategoryCount =>
+        _sensors
+            .Select(x => x.Category)
+            .Distinct()
+            .Count();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _refreshCancellation = new CancellationTokenSource();
+
+        await RefreshSensors();
+
+        _timer = new PeriodicTimer(
+            TimeSpan.FromSeconds(2));
+
+        _ = RefreshLoop(
+            _refreshCancellation.Token);
+    }
+
+    private async Task RefreshLoop(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (_timer is not null &&
+                   await _timer.WaitForNextTickAsync(
+                       cancellationToken))
+            {
+                await RefreshSensors();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RefreshSensors()
+    {
+        try
+        {
+            _sensors = await Api.GetSensorsAsync();
+
+            _loading = false;
+            _error = string.Empty;
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            _loading = false;
+            _error = ex.Message;
+
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static string GetCategoryName(int category)
+    {
+        return category switch
+        {
+            0 => "Environmental",
+            1 => "Power",
+            2 => "Actuator",
+            _ => "Other"
+        };
+    }
+
+    public void Dispose()
+    {
+        _refreshCancellation?.Cancel();
+        _timer?.Dispose();
+        _refreshCancellation?.Dispose();
+    }
+}

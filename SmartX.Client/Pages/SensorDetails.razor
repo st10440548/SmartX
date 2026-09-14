@@ -1,0 +1,482 @@
+@page "/sensors/{DeviceId}"
+@using SmartX.Client.Services
+@using Microsoft.AspNetCore.Components.Forms
+@implements IDisposable
+@inject SmartXApiService Api
+
+<PageTitle>Sensor Details</PageTitle>
+
+<div class="dashboard">
+    @if (_loading)
+    {
+        <div class="loading">
+            Loading sensor details...
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="error-panel">
+            <strong>Unable to load sensor</strong>
+            <p>@_error</p>
+        </div>
+    }
+    else if (_sensor is null)
+    {
+        <div class="error-panel">
+            <strong>Sensor not found</strong>
+            <p>No registered device matches <strong>@DeviceId</strong>.</p>
+        </div>
+    }
+    else
+    {
+        <div class="dashboard-header">
+            <div>
+                <p class="eyebrow">SENSOR PROFILE</p>
+                <h1>@_sensor.DeviceId</h1>
+                <p class="subtitle">@_sensor.Name</p>
+            </div>
+
+            @if (_sensor.IsOnline)
+            {
+                <div class="connection-status">
+                    <span class="status-dot"></span>
+                    ONLINE
+                </div>
+            }
+            else
+            {
+                <div class="connection-status offline-status">
+                    <span class="status-dot offline-dot"></span>
+                    OFFLINE
+                </div>
+            }
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span class="stat-label">CATEGORY</span>
+                <strong class="small-value">
+                    @GetCategoryName(_sensor.Category)
+                </strong>
+                <span class="stat-detail">Sensor classification</span>
+            </div>
+
+            <div class="stat-card">
+                <span class="stat-label">DATA TYPE</span>
+                <strong class="small-value">@_sensor.DataType</strong>
+                <span class="stat-detail">@_sensor.Unit</span>
+            </div>
+
+            <div class="stat-card">
+                <span class="stat-label">LOCATION</span>
+                <strong class="small-value">@_sensor.DeploymentLocation</strong>
+                <span class="stat-detail">@_sensor.Zone</span>
+            </div>
+
+            <div class="stat-card">
+                <span class="stat-label">ANOMALIES</span>
+                <strong class="anomaly-value">@AnomalyCount</strong>
+                <span class="stat-detail">Detected for device</span>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="panel-kicker">DEVICE IDENTITY</p>
+                        <h2>Hardware Profile</h2>
+                    </div>
+                </div>
+
+                <div class="detail-list">
+                    <div>
+                        <span>Device ID</span>
+                        <strong>@_sensor.DeviceId</strong>
+                    </div>
+
+                    <div>
+                        <span>MAC Address</span>
+                        <strong>@_sensor.MacAddress</strong>
+                    </div>
+
+                    <div>
+                        <span>Node</span>
+                        <strong>@_sensor.NodeId</strong>
+                    </div>
+
+                    <div>
+                        <span>Deployment</span>
+                        <strong>@_sensor.DeploymentLocation</strong>
+                    </div>
+
+                    <div>
+                        <span>Zone</span>
+                        <strong>@_sensor.Zone</strong>
+                    </div>
+
+                    <div>
+                        <span>Last Seen</span>
+                        <strong>
+                            @_sensor.LastSeen.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                        </strong>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="panel-kicker">LATEST READING</p>
+                        <h2>Current Telemetry</h2>
+                    </div>
+                </div>
+
+                @if (_telemetry.Count > 0)
+                {
+                    var latest = _telemetry.First();
+
+                    <div class="latest-reading">
+                        <strong>@GetDisplayValue(latest)</strong>
+
+                        <span>
+                            @latest.Timestamp.ToLocalTime()
+                                .ToString("yyyy-MM-dd HH:mm:ss")
+                        </span>
+
+                        @if (latest.IsAnomaly)
+                        {
+                            <div class="reading-alert">
+                                ANOMALY DETECTED
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="reading-normal">
+                                WITHIN EXPECTED RANGE
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="empty-state">
+                        No telemetry readings available.
+                    </div>
+                }
+            </section>
+        </div>
+
+        <section class="panel attachment-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="panel-kicker">DEVICE DOCUMENTATION</p>
+                    <h2>Attachments</h2>
+                </div>
+                <span class="panel-count">
+                    @_attachments.Count files
+                </span>
+            </div>
+
+            <div class="upload-area">
+                <InputFile OnChange="OnFileSelected" />
+
+                @if (_selectedFile is not null)
+                {
+                    <div class="selected-file">
+                        <div>
+                            <strong>@_selectedFile.Name</strong>
+                            <span>
+                                @FormatFileSize(_selectedFile.Size)
+                            </span>
+                        </div>
+
+                        <button
+                            class="primary-button"
+                            @onclick="UploadSelectedFile"
+                            disabled="@_uploading">
+                            @_uploadButtonText
+                        </button>
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_uploadMessage))
+                {
+                    <div class="upload-message">
+                        @_uploadMessage
+                    </div>
+                }
+            </div>
+
+            @if (_attachments.Count == 0)
+            {
+                <div class="empty-state">
+                    No configuration files or hardware logs attached.
+                </div>
+            }
+            else
+            {
+                <div class="attachment-list">
+                    @foreach (var attachment in _attachments)
+                    {
+                        <div class="attachment-item">
+                            <div class="attachment-icon">
+                                FILE
+                            </div>
+
+                            <div class="attachment-info">
+                                <strong>@attachment.FileName</strong>
+                                <span>
+                                    @FormatFileSize(attachment.FileSize)
+                                    ·
+                                    @attachment.UploadedAt
+                                        .ToLocalTime()
+                                        .ToString("yyyy-MM-dd HH:mm")
+                                </span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <p class="panel-kicker">HISTORICAL TELEMETRY</p>
+                    <h2>Recent Device Readings</h2>
+                </div>
+
+                <span class="panel-count">
+                    @_telemetry.Count readings
+                </span>
+            </div>
+
+            @if (_telemetry.Count == 0)
+            {
+                <div class="empty-state">
+                    No historical telemetry available.
+                </div>
+            }
+            else
+            {
+                <div class="telemetry-table">
+                    <div class="table-row table-heading">
+                        <span>TIME</span>
+                        <span>VALUE</span>
+                        <span>TYPE</span>
+                        <span>STATUS</span>
+                    </div>
+
+                    @foreach (var reading in _telemetry.Take(20))
+                    {
+                        <div class="table-row">
+                            <span>
+                                @reading.Timestamp
+                                    .ToLocalTime()
+                                    .ToString("HH:mm:ss")
+                            </span>
+
+                            <span class="reading-value">
+                                @GetDisplayValue(reading)
+                            </span>
+
+                            <span>
+                                @GetCategoryName(reading.Category)
+                            </span>
+
+                            @if (reading.IsAnomaly)
+                            {
+                                <span class="reading-anomaly">
+                                    ANOMALY
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="reading-normal">
+                                    NORMAL
+                                </span>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string DeviceId { get; set; } = string.Empty;
+
+    private SensorDto? _sensor;
+    private List<TelemetryReadingDto> _telemetry = new();
+    private List<SensorAttachmentDto> _attachments = new();
+
+    private IBrowserFile? _selectedFile;
+    private bool _uploading;
+    private string _uploadMessage = string.Empty;
+
+    private string _uploadButtonText =>
+        _uploading ? "UPLOADING..." : "UPLOAD FILE";
+
+    private bool _loading = true;
+    private string _error = string.Empty;
+
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _refreshCancellation;
+
+    private int AnomalyCount =>
+        _telemetry.Count(x => x.IsAnomaly);
+
+    private void OnFileSelected(InputFileChangeEventArgs args)
+    {
+        _selectedFile = args.File;
+        _uploadMessage = string.Empty;
+    }
+
+    private async Task UploadSelectedFile()
+    {
+        if (_selectedFile is null)
+        {
+            return;
+        }
+
+        _uploading = true;
+        _uploadMessage = string.Empty;
+
+        try
+        {
+            await using var stream =
+                _selectedFile.OpenReadStream(10 * 1024 * 1024);
+
+            var result =
+                await Api.UploadAttachmentAsync(
+                    DeviceId,
+                    stream,
+                    _selectedFile.Name,
+                    _selectedFile.ContentType);
+
+            if (result is null)
+            {
+                _uploadMessage =
+                    "Upload failed. Please try again.";
+                return;
+            }
+
+            _attachments =
+                await Api.GetAttachmentsAsync(DeviceId);
+
+            _selectedFile = null;
+
+            _uploadMessage =
+                "File uploaded successfully.";
+        }
+        catch (Exception ex)
+        {
+            _uploadMessage =
+                $"Upload failed: {ex.Message}";
+        }
+        finally
+        {
+            _uploading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024)
+        {
+            return $"{bytes} B";
+        }
+
+        if (bytes < 1024 * 1024)
+        {
+            return $"{bytes / 1024.0:F1} KB";
+        }
+
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _refreshCancellation = new CancellationTokenSource();
+
+        await RefreshSensor();
+
+        _timer = new PeriodicTimer(
+            TimeSpan.FromSeconds(2));
+
+        _ = RefreshLoop(
+            _refreshCancellation.Token);
+    }
+
+    private async Task RefreshLoop(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (_timer is not null &&
+                   await _timer.WaitForNextTickAsync(
+                       cancellationToken))
+            {
+                await RefreshSensor();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RefreshSensor()
+    {
+        try
+        {
+            _sensor = await Api.GetSensorByDeviceIdAsync(DeviceId);
+            _telemetry = await Api.GetDeviceTelemetryAsync(DeviceId);
+            _attachments = await Api.GetAttachmentsAsync(DeviceId);
+
+            _loading = false;
+            _error = string.Empty;
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            _loading = false;
+            _error = ex.Message;
+
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static string GetCategoryName(int category)
+    {
+        return category switch
+        {
+            0 => "Environmental",
+            1 => "Power Consumption",
+            2 => "Actuator",
+            _ => "Other"
+        };
+    }
+
+    private static string GetDisplayValue(
+        TelemetryReadingDto reading)
+    {
+        if (reading.Value is null)
+        {
+            return "-";
+        }
+
+        return $"{reading.Value} {reading.Unit}";
+    }
+
+    public void Dispose()
+    {
+        _refreshCancellation?.Cancel();
+        _timer?.Dispose();
+        _refreshCancellation?.Dispose();
+    }
+}

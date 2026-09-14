@@ -1,0 +1,322 @@
+@page "/"
+@using SmartX.Client.Services
+@implements IDisposable
+@inject SmartXApiService Api
+
+<PageTitle>Smart-X Dashboard</PageTitle>
+
+<div class="dashboard">
+    <div class="dashboard-header">
+        <div>
+            <p class="eyebrow">SMART-X IoT MESH ECOSYSTEM</p>
+            <h1>Telemetry Command Centre</h1>
+            <p class="subtitle">
+                Real-time monitoring of distributed IoT devices and telemetry streams.
+            </p>
+        </div>
+
+        <div class="connection-status">
+            <span class="status-dot"></span>
+            LIVE
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="loading">
+            Loading Smart-X telemetry...
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="error-panel">
+            <strong>Connection error</strong>
+            <p>@_error</p>
+        </div>
+    }
+    else
+    {
+        <div class="stats-grid">
+            <div class="stat-card">
+                <span class="stat-label">TOTAL DEVICES</span>
+                <strong>@_sensors.Count</strong>
+                <span class="stat-detail">Registered sensors</span>
+            </div>
+
+            <div class="stat-card">
+                <span class="stat-label">ONLINE</span>
+                <strong class="online-value">@OnlineCount</strong>
+                <span class="stat-detail">Connected devices</span>
+            </div>
+
+            <div class="stat-card">
+                <span class="stat-label">OFFLINE</span>
+                <strong class="offline-value">@OfflineCount</strong>
+                <span class="stat-detail">Connection interruptions</span>
+            </div>
+
+            <div class="stat-card">
+                <span class="stat-label">ANOMALIES</span>
+                <strong class="anomaly-value">@_anomalies.Count</strong>
+                <span class="stat-detail">Detected events</span>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="panel-kicker">DEVICE HEALTH</p>
+                        <h2>Network Status</h2>
+                    </div>
+                    <span class="panel-count">@_sensors.Count devices</span>
+                </div>
+
+                <div class="health-bar">
+                    <div class="health-online"
+                         style="width: @(OnlinePercentage)%">
+                    </div>
+                </div>
+
+                <div class="health-summary">
+                    <div>
+                        <span class="health-indicator online"></span>
+                        <span>Online</span>
+                        <strong>@OnlineCount</strong>
+                    </div>
+
+                    <div>
+                        <span class="health-indicator offline"></span>
+                        <span>Offline</span>
+                        <strong>@OfflineCount</strong>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="panel-kicker">TELEMETRY STREAM</p>
+                        <h2>Data Volume</h2>
+                    </div>
+                    <span class="live-label">● LIVE</span>
+                </div>
+
+                <div class="telemetry-total">
+                    @_telemetry.Count
+                </div>
+
+                <p class="telemetry-description">
+                    Historical readings currently held in the telemetry buffer.
+                </p>
+
+                <div class="category-row">
+                    <span>Environmental</span>
+                    <strong>@EnvironmentalCount</strong>
+                </div>
+
+                <div class="category-row">
+                    <span>Power Consumption</span>
+                    <strong>@PowerCount</strong>
+                </div>
+
+                <div class="category-row">
+                    <span>Actuator</span>
+                    <strong>@ActuatorCount</strong>
+                </div>
+            </section>
+        </div>
+
+        <section class="panel anomaly-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="panel-kicker">ANOMALY MONITORING</p>
+                    <h2>Recent Anomalies</h2>
+                </div>
+
+                <span class="anomaly-badge">
+                    @_anomalies.Count detected
+                </span>
+            </div>
+
+            @if (_anomalies.Count == 0)
+            {
+                <div class="empty-state">
+                    No anomalies detected.
+                </div>
+            }
+            else
+            {
+                <div class="anomaly-list">
+                    @foreach (var anomaly in _anomalies.Take(8))
+                    {
+                        <div class="anomaly-row">
+                            <div class="anomaly-icon">!</div>
+
+                            <div class="anomaly-info">
+                                <strong>@anomaly.DeviceId</strong>
+                                <span>@anomaly.Location</span>
+                            </div>
+
+                            <div class="anomaly-value">
+                                @GetDisplayValue(anomaly)
+                            </div>
+
+                            <div class="anomaly-time">
+                                @anomaly.Timestamp.ToLocalTime().ToString("HH:mm:ss")
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <p class="panel-kicker">LATEST TELEMETRY</p>
+                    <h2>Incoming Data</h2>
+                </div>
+
+                <span class="panel-count">
+                    @_telemetry.Count readings
+                </span>
+            </div>
+
+            <div class="telemetry-table">
+                <div class="table-row table-heading">
+                    <span>DEVICE</span>
+                    <span>CATEGORY</span>
+                    <span>VALUE</span>
+                    <span>TIME</span>
+                </div>
+
+                @foreach (var reading in _telemetry.Take(10))
+                {
+                    <div class="table-row">
+                        <span>@reading.DeviceId</span>
+                        <span>@GetCategoryName(reading.Category)</span>
+                        <span class="reading-value">@GetDisplayValue(reading)</span>
+                        <span>@reading.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private List<SensorDto> _sensors = new();
+    private List<TelemetryReadingDto> _telemetry = new();
+    private List<TelemetryReadingDto> _anomalies = new();
+
+    private bool _loading = true;
+    private string _error = string.Empty;
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _refreshCancellation;
+
+    private int OnlineCount =>
+        _sensors.Count(x => x.IsOnline);
+
+    private int OfflineCount =>
+        _sensors.Count(x => !x.IsOnline);
+
+    private double OnlinePercentage =>
+        _sensors.Count == 0
+            ? 0
+            : (double)OnlineCount / _sensors.Count * 100;
+
+    private int EnvironmentalCount =>
+        _telemetry.Count(x => x.Category == 0);
+
+    private int PowerCount =>
+        _telemetry.Count(x => x.Category == 1);
+
+    private int ActuatorCount =>
+        _telemetry.Count(x => x.Category == 2);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _refreshCancellation = new CancellationTokenSource();
+
+        await RefreshDashboard();
+
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+
+        _ = RefreshLoop(_refreshCancellation.Token);
+    }
+
+    private async Task RefreshLoop(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (_timer is not null &&
+                   await _timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await RefreshDashboard();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RefreshDashboard()
+    {
+        try
+        {
+            var sensorsTask = Api.GetSensorsAsync();
+            var telemetryTask = Api.GetTelemetryAsync();
+            var anomaliesTask = Api.GetAnomaliesAsync();
+
+            await Task.WhenAll(
+                sensorsTask,
+                telemetryTask,
+                anomaliesTask);
+
+            _sensors = await sensorsTask;
+            _telemetry = await telemetryTask;
+            _anomalies = await anomaliesTask;
+
+            _loading = false;
+            _error = string.Empty;
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            _loading = false;
+            _error = ex.Message;
+
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static string GetCategoryName(int category)
+    {
+        return category switch
+        {
+            0 => "Environmental",
+            1 => "Power",
+            2 => "Actuator",
+            _ => "Other"
+        };
+    }
+
+    private static string GetDisplayValue(TelemetryReadingDto reading)
+    {
+        if (reading.Value is null)
+        {
+            return "-";
+        }
+
+        return $"{reading.Value} {reading.Unit}";
+    }
+
+    public void Dispose()
+    {
+        _refreshCancellation?.Cancel();
+        _timer?.Dispose();
+        _refreshCancellation?.Dispose();
+    }
+}
