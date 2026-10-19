@@ -10,6 +10,8 @@ public class ChronologicalTelemetryService
     private readonly object _lock = new();
 
     private long _totalRecords;
+    private const int MaxHistoryRecords = 10000;
+    private int _storedRecords;
 
     public void AddReading(TelemetryReading reading)
     {
@@ -33,6 +35,17 @@ public class ChronologicalTelemetryService
             });
 
             _totalRecords++;
+            _storedRecords++;
+
+            while (_storedRecords > MaxHistoryRecords)
+            {
+                var oldest = _history.First();
+                oldest.Value.RemoveAt(0);
+                _storedRecords--;
+
+                if (oldest.Value.Count == 0)
+                    _history.Remove(oldest.Key);
+            }
         }
     }
 
@@ -69,6 +82,8 @@ public class ChronologicalTelemetryService
             return new
             {
                 TotalRecords = _totalRecords,
+                StoredRecords = _storedRecords,
+                MaxHistoryRecords,
                 UniqueTimestamps = _history.Count,
                 OldestTimestamp = _history.Count > 0
                     ? _history.First().Key
