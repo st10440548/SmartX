@@ -5,11 +5,19 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 
 builder.Services.AddSingleton<TelemetryService>();
+builder.Services.AddSingleton<TelemetryQueueService>();
+builder.Services.AddSingleton<PriorityAlertService>();
+builder.Services.AddHostedService<AlertProcessingWorker>();
+builder.Services.AddSingleton<ActiveAlertService>();
+builder.Services.AddSingleton<DeviceStateService>();
+builder.Services.AddSingleton<ChronologicalTelemetryService>();
+builder.Services.AddSingleton<PredictiveRecommendationService>();
 builder.Services.AddSingleton<SensorService>();
 builder.Services.AddSingleton<DeploymentValidationService>();
 builder.Services.AddSingleton<FileStorageService>();
 builder.Services.AddSingleton<AttachmentService>();
 builder.Services.AddSingleton<CommandService>();
+builder.Services.AddSingleton<ActuatorStateService>();
 builder.Services.AddSingleton<MeshTopologyService>();
 
 builder.Services.AddHostedService<TelemetrySimulator>();

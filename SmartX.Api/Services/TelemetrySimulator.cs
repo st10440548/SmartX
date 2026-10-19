@@ -7,16 +7,19 @@ public class TelemetrySimulator : BackgroundService
 {
     private readonly TelemetryService _telemetryService;
     private readonly SensorService _sensorService;
+    private readonly ActuatorStateService _actuatorStateService;
     private readonly Random _random = new();
 
     private readonly Dictionary<string, DateTime> _disconnectUntil = new();
 
     public TelemetrySimulator(
         TelemetryService telemetryService,
-        SensorService sensorService)
+        SensorService sensorService,
+        ActuatorStateService actuatorStateService)
     {
         _telemetryService = telemetryService;
         _sensorService = sensorService;
+        _actuatorStateService = actuatorStateService;
     }
 
     protected override async Task ExecuteAsync(
@@ -144,7 +147,7 @@ public class TelemetrySimulator : BackgroundService
     private void GenerateActuator(Models.Sensor sensor)
     {
         var state =
-            _random.Next(0, 2) == 1;
+            _actuatorStateService.GetState(sensor.DeviceId);
 
         var packet = new TelemetryPacket<bool>
         {

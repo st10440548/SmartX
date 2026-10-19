@@ -50,6 +50,23 @@ public class CommandsController : ControllerBase
         return Ok(command);
     }
 
+
+    [HttpPost("undo")]
+    public IActionResult UndoLastCommand()
+    {
+        var command = _commandService.UndoLastCommand();
+
+        if (command is null)
+        {
+            return Conflict(new
+            {
+                message = "No reversible commands available."
+            });
+        }
+
+        return Ok(command);
+    }
+
     [HttpGet]
     public IActionResult GetCommands()
     {

@@ -8,9 +8,27 @@ public class TelemetryService
     private readonly HistoricalTelemetryBuffer _buffer;
     private readonly SensorService _sensorService;
 
-    public TelemetryService(SensorService sensorService)
+    private readonly TelemetryQueueService _telemetryQueue;
+    private readonly PriorityAlertService _priorityAlerts;
+    private readonly ActiveAlertService _activeAlerts;
+    private readonly DeviceStateService _deviceStates;
+    private readonly ChronologicalTelemetryService _chronologicalHistory;
+    private readonly object _processingLock = new();
+
+    public TelemetryService(
+        SensorService sensorService,
+        TelemetryQueueService telemetryQueue,
+        PriorityAlertService priorityAlerts,
+        ActiveAlertService activeAlerts,
+        DeviceStateService deviceStates,
+        ChronologicalTelemetryService chronologicalHistory)
     {
         _sensorService = sensorService;
+        _telemetryQueue = telemetryQueue;
+        _priorityAlerts = priorityAlerts;
+        _activeAlerts = activeAlerts;
+        _deviceStates = deviceStates;
+        _chronologicalHistory = chronologicalHistory;
         _buffer = new HistoricalTelemetryBuffer();
     }
 
@@ -36,8 +54,8 @@ public class TelemetryService
             Severity = severity
         };
 
-        _buffer.Add(reading);
-        _sensorService.UpdateLastSeen(packet.DeviceId);
+        _telemetryQueue.Enqueue(reading);
+        ProcessPendingTelemetry();
     }
 
     public void AddPower(TelemetryPacket<int> packet)
@@ -62,8 +80,8 @@ public class TelemetryService
             Severity = severity
         };
 
-        _buffer.Add(reading);
-        _sensorService.UpdateLastSeen(packet.DeviceId);
+        _telemetryQueue.Enqueue(reading);
+        ProcessPendingTelemetry();
     }
 
     public void AddActuator(TelemetryPacket<bool> packet)
@@ -81,8 +99,66 @@ public class TelemetryService
             Severity = AnomalySeverity.None
         };
 
-        _buffer.Add(reading);
-        _sensorService.UpdateLastSeen(packet.DeviceId);
+        _telemetryQueue.Enqueue(reading);
+        ProcessPendingTelemetry();
+    }
+
+    private void ProcessPendingTelemetry()
+    {
+        lock (_processingLock)
+        {
+            while (_telemetryQueue.TryDequeue(out var reading))
+            {
+                if (reading is null)
+                    continue;
+
+                _buffer.Add(reading);
+                _sensorService.UpdateLastSeen(reading.DeviceId);
+                _deviceStates.UpdateState(reading);
+                _chronologicalHistory.AddReading(reading);
+
+                if (reading.IsAnomaly)
+                {
+                    var alert = new Alert
+                    {
+                        DeviceId = reading.DeviceId,
+                        Severity = reading.Severity,
+                        Timestamp = reading.Timestamp,
+                        Message = $"{reading.Category} anomaly: {reading.Value} {reading.Unit}"
+                    };
+
+                    // A device has one active severity at a time.
+                    var otherSeverity = reading.Severity == AnomalySeverity.Critical
+                        ? AnomalySeverity.Warning
+                        : AnomalySeverity.Critical;
+
+                    _activeAlerts.Resolve(new Alert
+                    {
+                        DeviceId = reading.DeviceId,
+                        Severity = otherSeverity
+                    });
+
+                    if (_activeAlerts.TryActivate(alert))
+                        _priorityAlerts.Enqueue(alert);
+                }
+                else
+                {
+                    // A normal reading clears active anomalies.
+                    foreach (var severity in new[]
+                    {
+                        AnomalySeverity.Warning,
+                        AnomalySeverity.Critical
+                    })
+                    {
+                        _activeAlerts.Resolve(new Alert
+                        {
+                            DeviceId = reading.DeviceId,
+                            Severity = severity
+                        });
+                    }
+                }
+            }
+        }
     }
 
     public List<TelemetryReading> GetAll()

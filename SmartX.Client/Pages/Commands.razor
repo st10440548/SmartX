@@ -83,6 +83,13 @@
                     @(_sending ? "SENDING..." : "SEND COMMAND")
                 </button>
 
+                <button
+                    class="primary-button command-button"
+                    @onclick="UndoCommand"
+                    disabled="@_sending">
+                    UNDO LAST COMMAND
+                </button>
+
                 @if (!string.IsNullOrWhiteSpace(_message))
                 {
                     <div class="command-message">
@@ -126,9 +133,7 @@
                     </span>
 
                     <small>
-                        @latest.CreatedAt
-                            .ToLocalTime()
-                            .ToString("yyyy-MM-dd HH:mm:ss")
+                        @(latest.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"))
                     </small>
 
                 </div>
@@ -173,9 +178,7 @@
                     <div class="command-table-row">
 
                         <span>
-                            @command.CreatedAt
-                                .ToLocalTime()
-                                .ToString("HH:mm:ss")
+                            @(command.CreatedAt.ToLocalTime().ToString("HH:mm:ss"))
                         </span>
 
                         <span>
@@ -314,6 +317,36 @@
         {
             _message =
                 $"Command failed: {ex.Message}";
+        }
+        finally
+        {
+            _sending = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task UndoCommand()
+    {
+        _sending = true;
+        _message = string.Empty;
+
+        try
+        {
+            var command = await Api.UndoLastCommandAsync();
+
+            if (command is null)
+            {
+                _message = "No reversible commands available.";
+                return;
+            }
+
+            _commands = await Api.GetCommandsAsync();
+
+            _message = "Last reversible command undone successfully.";
+        }
+        catch (Exception ex)
+        {
+            _message = $"Undo failed: {ex.Message}";
         }
         finally
         {

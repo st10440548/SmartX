@@ -183,6 +183,29 @@
                 </span>
             </div>
 
+
+            <div style="display:flex; gap:12px; flex-wrap:wrap; margin:16px 0;">
+                <label>
+                    Device category
+                    <select @bind="_categoryFilter">
+                        <option value="All">All categories</option>
+                        <option value="Environmental">Environmental</option>
+                        <option value="Power">Power Consumption</option>
+                        <option value="Actuator">Actuator</option>
+                    </select>
+                </label>
+
+                <label>
+                    Alert severity
+                    <select @bind="_severityFilter">
+                        <option value="All">All readings</option>
+                        <option value="Normal">Normal</option>
+                        <option value="Warning">Warning</option>
+                        <option value="Critical">Critical</option>
+                    </select>
+                </label>
+            </div>
+
             <div class="telemetry-table">
                 <div class="table-row table-heading">
                     <span>DEVICE</span>
@@ -191,7 +214,7 @@
                     <span>TIME</span>
                 </div>
 
-                @foreach (var reading in _telemetry.Take(10))
+                @foreach (var reading in FilteredTelemetry.Take(10))
                 {
                     <div class="table-row">
                         <span>@reading.DeviceId</span>
@@ -202,13 +225,75 @@
                 }
             </div>
         </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <p class="panel-kicker">SMART-X INTELLIGENCE</p>
+                    <h2>Predictive Recommendations</h2>
+                </div>
+                <span class="panel-count">
+                    @_recommendations.Count active
+                </span>
+            </div>
+
+            @if (_recommendations.Count == 0)
+            {
+                <div class="empty-state">
+                    No recommendations currently required.
+                </div>
+            }
+            else
+            {
+                @foreach (var recommendation in _recommendations)
+                {
+                    <div class="anomaly-row">
+                        <div class="anomaly-icon">!</div>
+
+                        <div class="anomaly-info">
+                            <strong>
+                                @recommendation.DeviceId
+                                — @recommendation.Severity
+                            </strong>
+                            <span>@recommendation.Message</span>
+                            <span>
+                                Suggested action:
+                                @recommendation.RecommendedAction
+                            </span>
+                        </div>
+
+                        <div class="anomaly-time">
+                            @recommendation.Timestamp.ToLocalTime().ToString("HH:mm:ss")
+                        </div>
+                    </div>
+                }
+            }
+        </section>
+
     }
 </div>
 
 @code {
+    private List<PredictiveRecommendationDto> _recommendations = new();
     private List<SensorDto> _sensors = new();
     private List<TelemetryReadingDto> _telemetry = new();
     private List<TelemetryReadingDto> _anomalies = new();
+
+
+    private string _categoryFilter = "All";
+    private string _severityFilter = "All";
+
+    private IEnumerable<TelemetryReadingDto> FilteredTelemetry =>
+        _telemetry.Where(reading =>
+            (_categoryFilter == "All" ||
+             (_categoryFilter == "Environmental" && reading.Category == 0) ||
+             (_categoryFilter == "Power" && reading.Category == 1) ||
+             (_categoryFilter == "Actuator" && reading.Category == 2))
+            &&
+            (_severityFilter == "All" ||
+             (_severityFilter == "Normal" && !reading.IsAnomaly) ||
+             (_severityFilter == "Warning" && reading.Severity == 1) ||
+             (_severityFilter == "Critical" && reading.Severity == 2)));
 
     private bool _loading = true;
     private string _error = string.Empty;
@@ -268,15 +353,18 @@
             var sensorsTask = Api.GetSensorsAsync();
             var telemetryTask = Api.GetTelemetryAsync();
             var anomaliesTask = Api.GetAnomaliesAsync();
+            var recommendationsTask = Api.GetRecommendationsAsync();
 
             await Task.WhenAll(
                 sensorsTask,
                 telemetryTask,
-                anomaliesTask);
+                anomaliesTask,
+                recommendationsTask);
 
             _sensors = await sensorsTask;
             _telemetry = await telemetryTask;
             _anomalies = await anomaliesTask;
+            _recommendations = await recommendationsTask;
 
             _loading = false;
             _error = string.Empty;

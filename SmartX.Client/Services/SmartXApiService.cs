@@ -12,6 +12,14 @@ public class SmartXApiService
         _http = http;
     }
 
+
+    public async Task<List<PredictiveRecommendationDto>> GetRecommendationsAsync()
+    {
+        return await _http.GetFromJsonAsync<List<PredictiveRecommendationDto>>(
+            "api/recommendations")
+            ?? new List<PredictiveRecommendationDto>();
+    }
+
     public async Task<List<SensorDto>> GetSensorsAsync()
     {
         return await _http.GetFromJsonAsync<List<SensorDto>>(
@@ -121,6 +129,21 @@ public class SmartXApiService
         var response = await _http.PostAsJsonAsync(
             "api/commands",
             command);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content
+            .ReadFromJsonAsync<DeviceCommandDto>();
+    }
+
+    public async Task<DeviceCommandDto?> UndoLastCommandAsync()
+    {
+        using var response = await _http.PostAsync(
+            "api/commands/undo",
+            null);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -271,4 +294,15 @@ public class CreateSensorDto
     public int Category { get; set; }
     public string DataType { get; set; } = string.Empty;
     public string Unit { get; set; } = string.Empty;
+}
+
+
+public class PredictiveRecommendationDto
+{
+    public string DeviceId { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public string Severity { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string RecommendedAction { get; set; } = string.Empty;
+    public DateTime Timestamp { get; set; }
 }
