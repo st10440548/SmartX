@@ -1,0 +1,30 @@
+name: Smart-X .NET CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build and test Smart-X
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore SmartX.slnx
+
+      - name: Build solution
+        run: dotnet build SmartX.slnx --configuration Release --no-restore
+
+      - name: Run automated tests
+        run: dotnet test SmartX.Tests/SmartX.Tests.csproj --configuration Release --no-build
