@@ -18,6 +18,8 @@ public class PriorityAlertService
     private long _totalEnqueued;
     private long _totalProcessed;
     private long _totalDiscarded;
+    private long _criticalProcessed;
+    private long _warningProcessed;
 
     public void Enqueue(Alert alert)
     {
@@ -53,6 +55,11 @@ public class PriorityAlertService
                 _processedAlerts.Add(alert);
                 _totalProcessed++;
 
+                if (alert.Severity == AnomalySeverity.Critical)
+                    _criticalProcessed++;
+                else if (alert.Severity == AnomalySeverity.Warning)
+                    _warningProcessed++;
+
                 if (_processedAlerts.Count > 1000)
                     _processedAlerts.RemoveAt(0);
 
@@ -84,10 +91,8 @@ public class PriorityAlertService
                 TotalEnqueued = _totalEnqueued,
                 TotalProcessed = _totalProcessed,
                 TotalDiscarded = _totalDiscarded,
-                CriticalProcessed = _processedAlerts.Count(
-                    a => a.Severity == AnomalySeverity.Critical),
-                WarningProcessed = _processedAlerts.Count(
-                    a => a.Severity == AnomalySeverity.Warning)
+                CriticalProcessed = _criticalProcessed,
+                WarningProcessed = _warningProcessed
             };
         }
     }
