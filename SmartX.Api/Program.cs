@@ -3,6 +3,7 @@ using SmartX.Api.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+builder.Services.AddHealthChecks();
 
 builder.Services.AddSingleton<TelemetryService>();
 builder.Services.AddSingleton<TelemetryQueueService>();
@@ -47,5 +48,6 @@ app.UseHttpsRedirection();
 app.UseCors("SmartXClient");
 
 app.MapControllers();
+app.MapHealthChecks("/health");
 
 app.Run();
