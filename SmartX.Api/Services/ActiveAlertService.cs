@@ -52,6 +52,13 @@ public class ActiveAlertService
         lock (_lock)
         {
             var key = GetAlertKey(alert);
+
+            if (!_activeAlertIds.TryGetValue(key, out var activeId)
+                || activeId != alert.Id)
+            {
+                return false;
+            }
+
             _activeAlertIds.Remove(key);
             return _activeAlerts.Remove(key);
         }
